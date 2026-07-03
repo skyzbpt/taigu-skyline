@@ -289,7 +289,7 @@
     <p class="panel-lead">輸入股票，先<b>秒讀證交所即時數據</b>，再交給 Claude 依這些真實數字做精準分析。</p>
     <p class="field-label">分析標的</p>
     <div class="search-row">
-      <input id="q" class="search-input" type="text" inputmode="numeric" placeholder="輸入股票代號，例如 2330" autocomplete="off" aria-label="股票代號" />
+      <input id="q" class="search-input" type="text" placeholder="輸入代號（2330）或指令（/morning-note）" autocomplete="off" aria-label="股票代號或研究指令" />
       <button id="go" class="btn btn-primary">秒讀＋分析</button>
     </div>
     <div class="chips-row" id="recentRow" style="display:none;">
@@ -317,6 +317,15 @@
       <button class="chip-scen" data-scen="chips">法人籌碼</button>
       <button class="chip-scen" data-scen="dividend">股利殖利率</button>
       <button class="chip-scen" data-scen="value">價值評估</button>
+    </div>
+
+    <div class="divider"></div>
+    <p class="field-label">研究指令 · Slash Commands</p>
+    <div class="scen-wrap" id="cmdChips"></div>
+    <div class="chips-row" id="cmdArgRow" style="display:none;">
+      <input id="cmdArgInput" class="cfg-input" style="flex:1 1 240px;" type="text" autocomplete="off" />
+      <button class="btn-sm primary" id="cmdArgBtn">執行</button>
+      <button class="btn-sm ghost" id="cmdArgCancel">取消</button>
     </div>
     </div><!-- /modeStock -->
 
@@ -371,6 +380,18 @@
       <div id="anArea"></div>
       <div class="disclaimer">分析由 Claude 依證交所公開資料生成，可能有延遲或誤差，僅供參考，<b>不構成投資建議</b>。投資有風險，請自行評估並為自己的決策負責。</div>
     </div>
+  </section>
+
+  <section class="panel" id="cmdWrap" style="display:none;">
+    <div class="an-head">
+      <span class="an-title" id="cmdTitle">研究指令</span>
+      <div class="an-tools">
+        <button class="copy-btn" id="cmdCopyBtn" disabled>複製</button>
+        <button class="copy-btn" id="cmdCloseBtn">收合</button>
+      </div>
+    </div>
+    <div id="cmdArea"></div>
+    <div class="disclaimer">研究內容由 Claude 結合證交所數據與網路搜尋生成，可能有誤差或遺漏，僅供參考，<b>不構成投資建議</b>。投資有風險，請自行評估並為自己的決策負責。</div>
   </section>
 
   <footer class="foot">
@@ -763,8 +784,20 @@
   }
 
   function run(){
-    var q=qEl.value.trim().toUpperCase();
-    if(!/^\d{4,6}[A-Z]?$/.test(q)){ hintEl.classList.add("show"); qEl.focus(); return; }
+    var raw=qEl.value.trim();
+    if(raw.charAt(0)==="/"){
+      var mCmd = raw.match(/^\/([a-z\-]+)\s*(.*)$/i);
+      var defC = mCmd ? cmdByName(mCmd[1].toLowerCase()) : null;
+      if(defC){
+        var rest=(mCmd[2]||"").trim();
+        if(defC.code && /^\d{4,6}[A-Za-z]?$/.test(rest)){ qEl.value=rest.toUpperCase(); execCommand(defC, ""); }
+        else execCommand(defC, rest);
+        return;
+      }
+      hintEl.textContent="找不到這個指令，可從下方「研究指令」點選。"; hintEl.classList.add("show"); return;
+    }
+    var q=raw.toUpperCase();
+    if(!/^\d{4,6}[A-Z]?$/.test(q)){ hintEl.textContent="請先輸入股票代號（上市 4 位數字）。"; hintEl.classList.add("show"); qEl.focus(); return; }
     hintEl.classList.remove("show");
     runFull(q);
   }
@@ -810,6 +843,117 @@
     if(k===state.scen && state.text) return;   // 同角度且已有結果就不重跑
     setScen(k);
     analyzeOnly();
+  });
+
+  // ---------- 研究指令 Slash Commands ----------
+  var COMMANDS = [
+    {c:"earnings-analysis", n:"財報深度報告", d:"完整財報研究報告（約3000～5000字，需1～3分鐘）", code:true},
+    {c:"initiating-coverage", n:"首次覆蓋報告", d:"機構級首次研究報告（需1～3分鐘）", code:true},
+    {c:"earnings", n:"季度財報點評", d:"快速精簡的季報分析", code:true},
+    {c:"initiate", n:"研究起手式", d:"首次研究流程入口：研究計畫與關鍵問題", code:true},
+    {c:"screen", n:"股票篩選", d:"依條件篩選或從榜單找點子", arg:"篩選條件，例：殖利率高、低本益比（可留空）"},
+    {c:"sector", n:"產業分析", d:"產業分析報告", arg:"產業名稱，例：半導體"},
+    {c:"sector-overview", n:"產業全覽", d:"完整產業概覽（需1～3分鐘）", arg:"產業名稱，例：航運"},
+    {c:"thesis", n:"投資論點", d:"建立可追蹤的投資論點（會自動保存）", code:true},
+    {c:"thesis-tracker", n:"論點追蹤", d:"檢視先前 /thesis 論點是否仍成立", code:true},
+    {c:"catalysts", n:"催化事件", d:"個股未來 1～6 個月重要事件", code:true},
+    {c:"catalyst-calendar", n:"催化行事曆", d:"自選股未來事件行事曆", watch:true},
+    {c:"earnings-preview", n:"財報前瞻", d:"財報公布前該關注什麼", code:true},
+    {c:"idea-generation", n:"點子產生器", d:"依產業或主題產生研究點子", arg:"產業或主題（可留空，自動從市場找）"},
+    {c:"model-update", n:"估值更新", d:"以最新數據更新估值區間", code:true},
+    {c:"morning-note", n:"台股晨報", d:"盤前晨報自動整理（含自選股）"}
+  ];
+  var CMD_MSGS = ["蒐集數據與搜尋資料中…","研究內容撰寫中…","長報告可能需要一到三分鐘，請稍候…","快完成了，正在整理格式…"];
+  var cmdPending=null, cmdTimer=null, cmdText="";
+
+  function cmdByName(name){ for(var i=0;i<COMMANDS.length;i++){ if(COMMANDS[i].c===name) return COMMANDS[i]; } return null; }
+  (function renderCmdChips(){
+    var el=$("cmdChips"); if(!el) return;
+    var html="";
+    for(var i=0;i<COMMANDS.length;i++){
+      var c=COMMANDS[i];
+      html += '<button class="chip-scen" data-cmd="'+c.c+'" title="'+esc(c.d)+'">/'+c.c+'</button>';
+    }
+    el.innerHTML=html;
+  })();
+  function startCmdLoading(){
+    var idx=0;
+    $("cmdArea").innerHTML='<div class="an-loading"><div class="spinner"></div><span id="cmdMsg">'+CMD_MSGS[0]+'</span></div>';
+    cmdTimer=setInterval(function(){ idx=(idx+1)%CMD_MSGS.length; var el=$("cmdMsg"); if(el) el.textContent=CMD_MSGS[idx]; }, 6000);
+  }
+  function stopCmdLoading(){ if(cmdTimer){ clearInterval(cmdTimer); cmdTimer=null; } }
+
+  function execCommand(def, arg){
+    if(busy) return;
+    var base=getBase();
+    if(!base){ cfgEl.open=true; showErr("請先在上方「後端設定」貼上你的 Worker 網址。"); return; }
+    var code=null;
+    if(def.code){
+      var qv=qEl.value.trim().toUpperCase();
+      code = /^\d{4,6}[A-Z]?$/.test(qv) ? qv : state.code;
+      if(!code){ showErr("/"+def.c+" 需要股票代號：請先查詢一檔股票，或在輸入框填代號。"); return; }
+    }
+    var watchlist=loadWatch();
+    if(def.watch && !watchlist.length){ showErr("/"+def.c+" 需要自選股：請先加入幾檔自選股。"); return; }
+    var context=null;
+    if(def.c==="thesis-tracker"){
+      context=lsGet("skyline_thesis_"+code);
+      if(!context){ showErr("找不到 "+code+" 的既有論點，請先執行 /thesis 建立。"); return; }
+    }
+    hideErr(); busy=true;
+    $("cmdTitle").textContent="/"+def.c+(code? " · "+code:"")+(arg? " · "+arg:"");
+    $("cmdWrap").style.display="block";
+    $("cmdCopyBtn").disabled=true; cmdText="";
+    startCmdLoading();
+    $("cmdWrap").scrollIntoView({behavior:"smooth", block:"start"});
+    fetch(base+"/api/command", {
+      method:"POST", headers:{"Content-Type":"application/json"},
+      body: JSON.stringify({ command:def.c, code:code, name:(code===state.code? state.name:""), arg:arg||"", watchlist:watchlist.slice(0,20), context:context })
+    })
+    .then(function(r){ return r.json().then(function(j){ if(!r.ok) throw new Error(j.error||("HTTP "+r.status)); return j; }); })
+    .then(function(res){
+      stopCmdLoading();
+      cmdText=(res && res.text)||"";
+      if(cmdText){
+        $("cmdArea").innerHTML='<div class="analysis fade">'+md(cmdText)+'</div>';
+        $("cmdCopyBtn").disabled=false;
+        if(def.c==="thesis" && code){ lsSet("skyline_thesis_"+code, "（建立於 "+new Date().toISOString().slice(0,10)+"）\n"+cmdText); }
+      } else {
+        $("cmdArea").innerHTML='<div class="an-loading">這次沒有取得內容，請再試一次。</div>';
+      }
+    })
+    .catch(function(err){
+      stopCmdLoading();
+      $("cmdArea").innerHTML='<div class="an-loading">執行失敗：'+esc(err.message)+'　（長報告偶爾會逾時，請重試一次）</div>';
+    })
+    .then(function(){ busy=false; });
+  }
+
+  $("cmdChips").addEventListener("click", function(e){
+    var b=e.target.closest("[data-cmd]"); if(!b||busy) return;
+    var def=cmdByName(b.getAttribute("data-cmd")); if(!def) return;
+    if(def.arg){
+      cmdPending=def;
+      $("cmdArgInput").value=""; $("cmdArgInput").placeholder=def.arg;
+      $("cmdArgRow").style.display="flex"; $("cmdArgInput").focus();
+    } else { execCommand(def, ""); }
+  });
+  $("cmdArgBtn").addEventListener("click", function(){
+    if(!cmdPending) return;
+    var v=$("cmdArgInput").value.trim();
+    $("cmdArgRow").style.display="none";
+    var d=cmdPending; cmdPending=null;
+    execCommand(d, v);
+  });
+  $("cmdArgInput").addEventListener("keydown", function(e){ if(e.key==="Enter"){ e.preventDefault(); $("cmdArgBtn").click(); } });
+  $("cmdArgCancel").addEventListener("click", function(){ cmdPending=null; $("cmdArgRow").style.display="none"; });
+  $("cmdCloseBtn").addEventListener("click", function(){ $("cmdWrap").style.display="none"; });
+  $("cmdCopyBtn").addEventListener("click", function(){
+    if(!cmdText) return;
+    var full=$("cmdTitle").textContent+"\n\n"+cmdText;
+    function done(){ $("cmdCopyBtn").textContent="已複製 ✓"; setTimeout(function(){ $("cmdCopyBtn").textContent="複製"; },1600); }
+    if(navigator.clipboard && navigator.clipboard.writeText){ navigator.clipboard.writeText(full).then(done).catch(function(){ fallbackCopy(full); done(); }); }
+    else { fallbackCopy(full); done(); }
   });
 
   // ---------- 模式切換 ----------
