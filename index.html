@@ -577,7 +577,8 @@
     var p=snap.price||{}, val=snap.valuation||{}, inst=snap.institutional||{};
     var name = snap.name || snap.code;
     var lastDate = (snap.history && snap.history.length) ? snap.history[snap.history.length-1].date : "";
-    var dateTxt = (lastDate? mmdd(lastDate) : "最新") + " 收盤 · " + hhmm(snap.asOf) + " 取得";
+    var pd = snap.priceDate || lastDate;
+    var dateTxt = (pd? mmdd(pd) : "最新") + " " + (snap.priceLabel || "收盤") + " · " + hhmm(snap.asOf) + " 取得";
     var chg=p.change, pct=p.changePct;
     var chgTxt = (chg==null) ? "" : (sign(chg)+fmt(chg,2)+(pct==null?"":"  ("+sign(pct)+fmt(pct,2)+"%)"));
     var c = cls(chg==null?0:chg);
