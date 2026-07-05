@@ -429,18 +429,38 @@
   var busy = false, anTimer=null;
 
   // ---------- Worker 網址 ----------
-  function getBase(){ return (urlInput.value.trim() || lsGet("skyline_worker") || DEFAULT_WORKER || "").replace(/\/+$/,""); }
+  // 清理並驗證後端網址（容錯：全形字元、空白、引號、缺 https://）
+  function sanitizeBase(v){
+    v = String(v||"");
+    v = v.replace(/[\uFF01-\uFF5E]/g, function(ch){ return String.fromCharCode(ch.charCodeAt(0) - 0xFEE0); });
+    v = v.replace(/[\u3002\uFF61]/g, ".");
+    v = v.replace(/[\s\u200B-\u200D\uFEFF\u3000]/g, "");
+    v = v.replace(/^[\u300C\u300E"']+|[\u300D\u300F"']+$/g, "");
+    if(!v) return "";
+    if(!/^https?:\/\//i.test(v)) v = "https://" + v;
+    v = v.replace(/\/+$/,"");
+    if(v.indexOf(".") === -1) return "";
+    try {
+      var u = new URL(v);
+      if(!/^[a-z0-9.\-]+$/i.test(u.hostname)) return "";
+    } catch(e) { return ""; }
+    return v;
+  }
+  function getBase(){
+    return sanitizeBase(urlInput.value) || sanitizeBase(lsGet("skyline_worker")) || sanitizeBase(DEFAULT_WORKER) || "";
+  }
   function setStatus(kind, txt){
     sdot.className = "sdot" + (kind ? " " + kind : "");
     sstat.textContent = txt;
   }
   (function initUrl(){
-    var saved = lsGet("skyline_worker") || DEFAULT_WORKER;
-    if(saved) urlInput.value = saved;
+    var saved = sanitizeBase(lsGet("skyline_worker")) || sanitizeBase(DEFAULT_WORKER);
+    if(saved){ urlInput.value = saved; lsSet("skyline_worker", saved); }
     if(getBase()) setStatus("", "已設定"); else { setStatus("", "尚未設定"); cfgEl.open = true; }
   })();
   $("saveWorker").addEventListener("click", function(){
-    var v = urlInput.value.trim().replace(/\/+$/,"");
+    var v = sanitizeBase(urlInput.value);
+    if(urlInput.value.trim() && !v){ setStatus("bad", "網址格式不正確，請重新輸入"); return; }
     urlInput.value = v; lsSet("skyline_worker", v);
     if(v){ setStatus("", "已設定"); testConn(); } else setStatus("", "尚未設定");
   });
