@@ -872,7 +872,7 @@
     var html="";
     for(var i=0;i<COMMANDS.length;i++){
       var c=COMMANDS[i];
-      html += '<button class="chip-scen" data-cmd="'+c.c+'" title="'+esc(c.d)+'">/'+c.c+'</button>';
+      html += '<button class="chip-scen" data-cmd="'+c.c+'" title="'+esc(c.d)+'（/'+c.c+'）">'+esc(c.n)+'<span style="opacity:.55;font-size:11px;margin-left:5px;font-family:var(--font-disp);">/'+c.c+'</span></button>';
     }
     el.innerHTML=html;
   })();
